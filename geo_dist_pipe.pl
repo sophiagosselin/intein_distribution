@@ -58,12 +58,18 @@ sub MAIN{
     close OUT;
 
     #calculate average distance between all members of the cluster
+    #note that any cell with NA is excluded.
     my $sum=0;
     my $count=0;
     foreach my $row_asc (keys %cluster_distances){
       foreach my $col_asc (keys %{$cluster_distances{$row_asc}}){
-        $sum+=$cluster_distances{$row_asc}{$col_asc};
-        $count++;
+        if($cluster_distances{$row_asc}{$col_asc} eq "NA"){
+          next;
+        }
+        else{
+          $sum+=$cluster_distances{$row_asc}{$col_asc};
+          $count++;
+        }
       }
     }
     my $average = $sum/$count;
@@ -107,6 +113,13 @@ sub GET_KM_DISTANCE{
   my $loc1_lat = shift;
   my $loc2_long = shift;
   my $loc2_lat = shift;
+
+  my @test_arr=($loc1_lat,$loc1_long,$loc2_lat,$loc2_long);
+  foreach my $test (@test_arr){
+    if($test eq "NA"){
+      return("NA");
+    }
+  }
 
   my $loc1_long_rad = deg2rad($loc1_long);
   my $loc1_lat_rad = deg2rad($loc1_lat);
@@ -180,59 +193,91 @@ sub GET_METADATA_CHILD {
   while (my $phage = $queue->dequeue()) {
     my $url = "https://phagesdb.org/api/phages/$phage/";
     my $response = get($url);
+    my($lat_choord,$long_choord);
 
     if (!$response) {
-      print $error_log "Failed to retrieve metadata for $phage\n";
+      print $error_log "Failed to retrieve metadata for $phage\n\n";
+      $lat_choord="NA";
+      $long_choord="NA";
     }
 
     else{
-      my ($lat) = ($response =~ /"found_GPS_lat".*?\"(.*?)\".*[\,\}]/);
+      my ($lat) = ($response =~ /\"found_GPS_lat\"\:.*?\"(.*?)\"/) or die print $error_log "Could not find lattitude in the following metadata!\n\n$response\n\n";;
       if(!$lat){
-        die print $error_log "Could not find lattitude in the following metadata!\n\n$response";
+        print $error_log "Could not find lattitude in the following metadata!\n\n$response\n\n";
+        $lat_choord="NA";
       }
-      if($lat=~/([NS])/){
-        my $dir = $1;
-        ($lat)=($lat=~/(.*?)\ .*/);
-        if($dir eq "N"){
-          $lat=(90-$lat);
+      elsif($lat=~/.*([NS])/){
+        my $direction = $1;
+        #check this later.
+        ($lat_choord)=($lat=~/(.*?)\ .*/);
+        if($direction eq "N"){
+          $lat_choord=(90-$lat_choord);
         }
-        elsif($dir eq "S"){
-          $lat=(abs($lat)+90);
+        elsif($direction eq "S"){
+          $lat_choord=(abs($lat_choord)+90);
         }
         else{
-          die "Could not fix lattidue $lat";
+          print $error_log "Program claimed lattitude: $lat, and claimed the direction was $direction.\nThis should contain a N or S, but neither was captured.\nAssociated metadata is:$response\n\n";
+          d$lat_choord="NA";
         }
       }
       else{
-        if($lat=~/\-/){
-          $lat=(abs($lat)+90);
+        if($lat=~/\-.*/){
+          $lat_choord=(abs($lat)+90);
+        }
+        elsif($lat=~/\d+/){
+          $lat_choord=(90-$lat);
+          if($lat_choord eq ""){
+            print $error_log "Program captured lattitude: $lat but could not capture the choord.\nAssociated metadata is:$response\n\n";
+            $lat_choord="NA";
+          }
         }
         else{
-          $lat=(90-$lat);
+          print $error_log "Program captured lattitude: $lat but this is not a numeric value.\nAssociated metadata is:$response\n\n";
+          $lat_choord="NA";
         }
       }
-      my ($long) = ($response =~ /"found_GPS_long".*?\"(.*?)\".*[\,\}]/) or die print $error_log "Could not find longitude in the following metadata!\n\n$response";
-      if($long=~/([WE])/){
-        my $dir = $1;
-        ($long)=($long=~/(.*?)\ .*/);
-        if($dir eq "E"){
+
+      my ($long) = ($response =~ /\"found_GPS_long\"\:.*?\"(.*?)\"/) or die print $error_log "Could not find longitude in the following metadata!\n\n$response\n\n";
+      if(!$long){
+        print $error_log "Could not find longitude in the following metadata!\n\n$response\n\n";
+        $long_choord="NA";
+      }
+      elsif($long=~/([WE])/){
+        my $direction = $1;
+        ($long_choord)=($long=~/(.*?)\ .*/);
+        if($direction eq "E"){
+          #nothing!
         }
-        elsif($dir eq "W"){
-          $long=(abs($long)+180);
+        elsif($direction eq "W"){
+          $long_choord=(abs($long_choord)+180);
         }
         else{
-          die "Could not fix lattidue $long";
+          print $error_log "Program claimed longitude: $long and claimed the direction was $direction.\nThis should contain a E or W, but neither was captured.\nAssociated metadata is:$response\n\n";
+          $long_choord="NA";
         }
       }
       else{
-        if($long=~/\-/){
-          $long=(abs($long)+180);
+        if($long=~/\-.*/){
+          $long_choord=(abs($long)+180);
+        }
+        elsif($long=~/\d+/){
+          #the choordinate should be a choordinate
+          $long_choord=$long;
+          if($long_choord eq ""){
+            print $error_log "Program captured lattitude: $long but could not capture the choord.\nAssociated metadata is:$response\n\n";
+            $lat_choord="NA";
+          }
         }
         else{
+          print $error_log "Program captured longitude: $long but this is not a numeric value.\nAssociated metadata is:$response\n\n";
+          $long_choord="NA";
         }
       }
-      $geo_data{$phage}{"lat"} = $lat;
-      $geo_data{$phage}{"long"} = $long;
+
+      $geo_data{$phage}{"lat"} = $lat_choord;
+      $geo_data{$phage}{"long"} = $long_choord;
     }
   }
   return \%geo_data;
