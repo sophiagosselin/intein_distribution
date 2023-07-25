@@ -7,19 +7,29 @@ use Thread::Queue;
 use LWP::Simple;
 use Math::Trig;
 use Math::Trig qw(great_circle_distance deg2rad);
+use Data::Dumper;
 
 #FUTURE DIRECTIONS
 #find any clusters where there is a distance value above X threshold
 #make phylogenies of those clusters.
 
+#add metric for the percent divergence between the exteins of the inteins for a given usearch cluster
+
+#compare clustering at 98 98.5 99 and 99.5% seqid
+
+#send peter info on how much money you were promised over the summer from any sources.
+
 #CLEANUP AND ERROR PREP
 system("rm error.log");
+system("rm meta.log");
 system("rm *.temp");
 system("rm -r clusters");
+system("rm -r blast_searches");
 system("rm average_distances.table");
 system("rm clustered.uc");
 system("rm average_distances.table");
 open(my $error_log, "+> error.log");
+open(my $meta, "+> meta.log");
 my $queue = Thread::Queue->new();
 
 #GLOBALS
@@ -27,55 +37,206 @@ my $queue = Thread::Queue->new();
 my $input_file = $ARGV[0]; #input file first!
 my $cluster_id = $ARGV[1]; #suggest .985 or .99
 my $max_threads = $ARGV[2]; #check your number of cpus!
+my $blast_database = $ARGV[3]; #path to blastdb that has seqs of interest. must be made using parse_seqids
 
 MAIN();
 close $error_log;
+close $meta;
 
 sub MAIN{
-  my(%input_sequences)=READIN_FASTA($input_file);
+  my (%input_sequences)=READIN_FASTA($input_file);
 
-  my @input_ascessions = ( keys %input_sequences );
+  my @input_ascessions=( keys %input_sequences );
 
-  my(%long_lat)=GET_METADATA_PARENT(@input_ascessions);
+  my (%long_lat)=GET_METADATA_PARENT(@input_ascessions);
 
-  my (@cluster_fastas) = USEARCH($input_file,$cluster_id);
+  my (@cluster_fastas)=USEARCH($input_file,$cluster_id);
 
-  open(my $AVG, "+> average_distances.table");
+  open(my $AVG, "> average_distances.table");
+  print $AVG "Cluster_Number\tAverage_Distance_km\tExtein_Sequence_Similarity\n";
+
+  #note that we skip any clusters with less than 2 taxa
   foreach my $cluster (@cluster_fastas){
     my(%cluster_sequences)=READIN_FASTA($cluster);
     my @cluster_ascessions = ( keys %cluster_sequences );
-    my %cluster_distances;
-    foreach my $asc1 (@cluster_ascessions){
-      foreach my $asc2 (@cluster_ascessions){
-        my $distance  = GET_KM_DISTANCE($long_lat{$asc1}{"long"},$long_lat{$asc1}{"lat"},$long_lat{$asc2}{"long"},$long_lat{$asc2}{"lat"});
-        $cluster_distances{$asc1}{$asc2}=$distance;
+    my($clust_num)=($cluster=~/clusters\/(.*)/);
+    if(scalar(@cluster_ascessions)>=2){
+      my %cluster_distances;
+      foreach my $asc1 (@cluster_ascessions){
+        foreach my $asc2 (@cluster_ascessions){
+          my $distance = GET_KM_DISTANCE($long_lat{$asc1}{"long"},$long_lat{$asc1}{"lat"},$long_lat{$asc2}{"long"},$long_lat{$asc2}{"lat"},$asc1,$asc2);
+          $cluster_distances{$asc1}{$asc2}=$distance;
+        }
+      }
+      #print out matrix for later supplemental data
+      my $toprint = MATRIX_FROM_HASH(\%cluster_distances);
+      open(OUT, "+> $cluster.dist");
+      print OUT $toprint;
+      close OUT;
+
+      #now get data for the amount of sequence divergence of the associated exteins
+      my ($similarity_data)=EXTEIN_DIVERGENCE($clust_num,\%cluster_sequences);
+      #calculate average distance between all members of the cluster
+      #note that any cell with NA is excluded.
+      my $sum=0;
+      my $count=0;
+      foreach my $row_asc (keys %cluster_distances){
+        foreach my $col_asc (keys %{$cluster_distances{$row_asc}}){
+          if($cluster_distances{$row_asc}{$col_asc} eq "NA"){
+            next;
+          }
+          else{
+            $sum+=$cluster_distances{$row_asc}{$col_asc};
+            $count++;
+          }
+        }
+      }
+      if($count == 0){
+        print $AVG "$clust_num\tNO_GEO_DATA\t$similarity_data\n";
+      }
+      else{
+        my $average = $sum/$count;
+        print $AVG "$clust_num\t$average\t$similarity_data\n";
       }
     }
-    #print out matrix for later supplemental data
-    my $toprint = MATRIX_FROM_HASH(\%cluster_distances);
-    open(OUT, "+> $cluster.dist");
-    print OUT $toprint;
+    else{
+      #TFTC too few to count
+      print $AVG "$clust_num\tTFTC\n";
+    }
+  }
+}
+
+sub EXTEIN_DIVERGENCE{
+  #takes hash of sequences and associated ascessions
+  #runs blast searches using said sequences against a blastdb protein database
+  #returns the full sequence from the best match
+  my $cluster_number=shift;
+  my $hashref=shift;
+  my %intein_sequences = %{$hashref};
+  mkdir("blast_searches");
+
+  open(EXT, "+> blast_searches/$cluster_number\_extein.fasta");
+  foreach my $accession (keys %intein_sequences){
+
+    my($filename,$phagename)=($accession=~/\>(.*?\_(.*?\_.*?)\_).*/);
+
+    open(OUT, "+> blast_searches\/$filename\.fasta");
+    print OUT "$accession\n";
+    print OUT "$intein_sequences{$accession}\n";
     close OUT;
 
-    #calculate average distance between all members of the cluster
-    #note that any cell with NA is excluded.
-    my $sum=0;
-    my $count=0;
-    foreach my $row_asc (keys %cluster_distances){
-      foreach my $col_asc (keys %{$cluster_distances{$row_asc}}){
-        if($cluster_distances{$row_asc}{$col_asc} eq "NA"){
+    system("blastp -db $blast_database -query blast_searches/$filename.fasta -evalue 1e-50 -outfmt 6 -out 'blast_searches/$filename.blast'");
+    if(-s "blast_searches/$filename.blast"){
+      FILTER_BLAST($phagename,"blast_searches/$filename.blast");
+      system("blastdbcmd -db $blast_database -entry_batch blast_searches/filtered_results.txt -outfmt \"\%f\" > blast_searches/$filename\_extein.fasta");
+      if(-z "blast_searches/$filename\_extein.fasta"){
+        print $error_log "$accession could not be extracted. Testing for acession changes.\n";
+        my($no_cds)=($phagename=~/(.*?)\_.*/);
+        FILTER_BLAST($no_cds,"blast_searches/$filename.blast");
+        system("blastdbcmd -db $blast_database -entry_batch blast_searches/filtered_results.txt -outfmt \"\%f\" > blast_searches/$filename\_extein.fasta");
+        if(-z "blast_searches/$filename\_extein.fasta"){
+          print $error_log "$accession could not be extracted even after ignoring cds. Excluding it from sequence similarity calculations.\n";
           next;
         }
-        else{
-          $sum+=$cluster_distances{$row_asc}{$col_asc};
-          $count++;
+        else{}
+      }
+      else{
+        my %extein_sequences = READIN_FASTA("blast_searches/$filename\_extein.fasta");
+        foreach my $ext_asc (keys %extein_sequences){
+          my $ext_seq_w_int = $extein_sequences{$ext_asc};
+          my $int_seq = $intein_sequences{$accession};
+          $ext_seq_w_int =~ s/$int_seq//g;
+          print EXT "$ext_asc\n";
+          print EXT "$ext_seq_w_int\n";
         }
       }
     }
-    my $average = $sum/$count;
-    my($clust_num)=($cluster=~/clusters\/(.*)/);
-    print $AVG "$clust_num\t$average\n";
+    else{
+      print $error_log "$accession returned no matches from BLAST. Excluding it for the purposes of calculaing sequence similarity.\n";
+    }
   }
+  close EXT;
+
+  STANDARDIZE_FASTA("blast_searches/$cluster_number\_extein.fasta");
+  system("muscle -align blast_searches/$cluster_number\_extein.fasta -output blast_searches/$cluster_number\_extein.fasta.aligned");
+
+  my $sequence_similarity = SEQUENCE_SIMILARITY("blast_searches/$cluster_number\_extein.fasta.aligned");
+
+  return($sequence_similarity);
+}
+
+sub SEQUENCE_SIMILARITY{
+  #takes alignment as input
+  #calculates and returns the average sequence similarity
+  my $sequence_file = shift;
+  my %sequence_data = READIN_FASTA($sequence_file);
+  my @pairwise_seq_sim;
+
+  foreach my $seq_asc1 (keys %sequence_data){
+    my $sequence_length = length($sequence_data{$seq_asc1});
+    print "Length of $seq_asc1 is $sequence_length\n";
+    foreach my $seq_asc2 (keys %sequence_data){
+      my $similarity_counter = 0;
+      my $length_to_average_over = $sequence_length;
+      my @split_seq2 = split(//,$sequence_data{$seq_asc2});
+      my @split_seq1 = split(//,$sequence_data{$seq_asc1});
+      for (my $index=0; $index<$sequence_length; $index++){
+        if($split_seq1[$index] eq "-" | $split_seq2[$index] eq "-"){
+          $length_to_average_over--;
+        }
+        elsif($split_seq1[$index] eq $split_seq2[$index]){
+          $similarity_counter++;
+        }
+        else{
+          #Nothing!
+        }
+      }
+      my $similarity = ($similarity_counter/$length_to_average_over);
+      #print "Similarity is $similarity.\nTotal Length of Alignment sans uninformative sites is $length_to_average_over\nSimilar Sites count is $similarity_counter\n\n";
+      push(@pairwise_seq_sim,$similarity);
+    }
+  }
+
+  #calculate average percent similarity
+  my $arr_size = @pairwise_seq_sim;
+  my $running_average = 0;
+  foreach my $percent (@pairwise_seq_sim){
+    $running_average+=$percent;
+  }
+  my $avg_sim = $running_average/$arr_size;
+  return($avg_sim);
+}
+
+sub FILTER_BLAST{
+	#takes a blast output file (format 6) as input.
+	#Retrieves the best hits for each match so they can be extracted.
+  my $phage_of_interest=shift;
+  my $blast_results = shift;
+  my $toggle = 0;
+	my @entries_for_blastcmd;
+	open(BLAST, "< $blast_results") or die VERBOSEPRINT(0, "Check your BLAST software and databases for issues. No BLAST output from search was found.\n");
+	open(OUT, "> blast_searches/filtered_results.txt");
+	while(<BLAST>){
+		chomp;
+    my @output_columns = split(/\t/, $_);
+    if($output_columns[1]=~/$phage_of_interest/){
+      if($toggle==0){
+        print OUT "$output_columns[1]\n";
+        $toggle=1;
+      }
+      elsif($toggle==1){
+        #print "Found $phage_of_interest twice... in $blast_results.\n";
+      }
+      else{
+        next;
+      }
+    }
+    else{
+      next;
+    }
+	}
+	close BLAST;
+	close OUT;
 }
 
 sub MATRIX_FROM_HASH{
@@ -113,11 +274,19 @@ sub GET_KM_DISTANCE{
   my $loc1_lat = shift;
   my $loc2_long = shift;
   my $loc2_lat = shift;
+  my $asc_test1 = shift;
+  my $asc_test2 = shift;
 
   my @test_arr=($loc1_lat,$loc1_long,$loc2_lat,$loc2_long);
   foreach my $test (@test_arr){
     if($test eq "NA"){
       return("NA");
+    }
+    elsif($test eq ""){
+      print "Unititialized values from $asc_test1 and $asc_test2\n";
+    }
+    else{
+      next;
     }
   }
 
@@ -167,7 +336,7 @@ sub GET_METADATA_PARENT{
   foreach my $asc (@ascs){
     my($phagename)=($asc=~/\>.*?\_(.*?)\_.*/);
     push(@phagenames, $phagename);
-    $paired_keys{$phagename}=$asc;
+    $paired_keys{$asc}=$phagename;
     $count_reporter++;
   }
   print "There are $count_reporter sequences to work through!\nStarting threads now\n";
@@ -178,10 +347,10 @@ sub GET_METADATA_PARENT{
   print "All threads finished\n";
 
   my %parsed_metadata;
-  foreach my $key (keys %unparsed_metadata){
-    my $newkey = $paired_keys{$key};
-    $parsed_metadata{$newkey}{"lat"}=$unparsed_metadata{$key}{"lat"};
-    $parsed_metadata{$newkey}{"long"}=$unparsed_metadata{$key}{"long"};
+  foreach my $key (keys %paired_keys){
+    my $phagekey = $paired_keys{$key};
+    $parsed_metadata{$key}{"lat"}=$unparsed_metadata{$phagekey}{"lat"};
+    $parsed_metadata{$key}{"long"}=$unparsed_metadata{$phagekey}{"long"};
   }
 
   return(%parsed_metadata);
@@ -191,6 +360,7 @@ sub GET_METADATA_CHILD {
   #returns latitude and longitude values
   my %geo_data;
   while (my $phage = $queue->dequeue()) {
+    print $meta "$phage has been parsed.\n";
     my $url = "https://phagesdb.org/api/phages/$phage/";
     my $response = get($url);
     my($lat_choord,$long_choord);
@@ -211,7 +381,10 @@ sub GET_METADATA_CHILD {
         my $direction = $1;
         #check this later.
         ($lat_choord)=($lat=~/(.*?)\ .*/);
-        if($direction eq "N"){
+        if(!defined $lat_choord){
+          $lat_choord="NA";
+        }
+        elsif($direction eq "N"){
           $lat_choord=(90-$lat_choord);
         }
         elsif($direction eq "S"){
@@ -219,16 +392,20 @@ sub GET_METADATA_CHILD {
         }
         else{
           print $error_log "Program claimed lattitude: $lat, and claimed the direction was $direction.\nThis should contain a N or S, but neither was captured.\nAssociated metadata is:$response\n\n";
-          d$lat_choord="NA";
+          $lat_choord="NA";
         }
       }
       else{
-        if($lat=~/\-.*/){
+        if($lat=~/[WE]/){
+          print $error_log "Program captured lattitude: $lat but could this is actually a longitude value.\nAssociated metadata is:$response\n\n";
+          $lat_choord="NA";
+        }
+        elsif($lat=~/\-/){
           $lat_choord=(abs($lat)+90);
         }
         elsif($lat=~/\d+/){
           $lat_choord=(90-$lat);
-          if($lat_choord eq ""){
+          if(!defined $lat_choord){
             print $error_log "Program captured lattitude: $lat but could not capture the choord.\nAssociated metadata is:$response\n\n";
             $lat_choord="NA";
           }
@@ -247,7 +424,10 @@ sub GET_METADATA_CHILD {
       elsif($long=~/([WE])/){
         my $direction = $1;
         ($long_choord)=($long=~/(.*?)\ .*/);
-        if($direction eq "E"){
+        if(!defined $long_choord){
+          $long_choord="NA";
+        }
+        elsif($direction eq "E"){
           #nothing!
         }
         elsif($direction eq "W"){
@@ -259,7 +439,11 @@ sub GET_METADATA_CHILD {
         }
       }
       else{
-        if($long=~/\-.*/){
+        if($long=~/[NS]/){
+          print $error_log "Program captured longitude: $long but could this is actually a lattitude value.\nAssociated metadata is:$response\n\n";
+          $long_choord="NA";
+        }
+        elsif($long=~/\-/){
           $long_choord=(abs($long)+180);
         }
         elsif($long=~/\d+/){
@@ -276,9 +460,17 @@ sub GET_METADATA_CHILD {
         }
       }
 
-      $geo_data{$phage}{"lat"} = $lat_choord;
-      $geo_data{$phage}{"long"} = $long_choord;
+      if($lat_choord eq ""){
+        $lat_choord="NA";
+      }
+      else{}
+      if($long_choord eq ""){
+        $long_choord="NA";
+      }
+      else{}
     }
+    $geo_data{$phage}{"lat"} = "$lat_choord";
+    $geo_data{$phage}{"long"} = "$long_choord";
   }
   return \%geo_data;
 }
@@ -343,16 +535,20 @@ sub READIN_FASTA{
 sub STANDARDIZE_FASTA {
 	#removes most unique characters from annotation lines
 	#makes later searches and moving of files much easier.
+  #also tacks a uniqueid on the end
 	my $fastafile = shift;
+  my $counter = 0;
 	open(IN, "< $fastafile");
 	open(OUT, "+> temp.fasta");
 	while(<IN>){
+    chomp;
 		if($_=~/\>/){
 			$_=~s/[\ \[\]\(\)\:\;\/\.\-\~\`\!\@\#\$\%\^\&\*\=\+\{\}\?]/\_/g;
-			print OUT $_;
+			print OUT "$_\_$counter\n";
+      $counter++;
 		}
 		else{
-			print OUT $_;
+			print OUT "$_\n";
 		}
 	}
 	close IN;
