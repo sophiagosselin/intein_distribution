@@ -13,21 +13,19 @@ use Data::Dumper;
 #find any clusters where there is a distance value above X threshold
 #make phylogenies of those clusters.
 
-#add metric for the percent divergence between the exteins of the inteins for a given usearch cluster
-
 #compare clustering at 98 98.5 99 and 99.5% seqid
 
 #send peter info on how much money you were promised over the summer from any sources.
 
 #CLEANUP AND ERROR PREP
-system("rm error.log");
-system("rm meta.log");
-system("rm *.temp");
-system("rm -r clusters");
-system("rm -r blast_searches");
-system("rm average_distances.table");
-system("rm clustered.uc");
-system("rm average_distances.table");
+#system("rm error.log");
+#system("rm meta.log");
+#system("rm *.temp");
+#system("rm -r clusters");
+#system("rm -r blast_searches");
+#system("rm average_distances.table");
+#system("rm clustered.uc");
+#system("rm average_distances.table");
 open(my $error_log, "+> error.log");
 open(my $meta, "+> meta.log");
 my $queue = Thread::Queue->new();
@@ -53,14 +51,15 @@ sub MAIN{
   my (@cluster_fastas)=USEARCH($input_file,$cluster_id);
 
   open(my $AVG, "> average_distances.table");
-  print $AVG "Cluster_Number\tAverage_Distance_km\tExtein_Sequence_Similarity\n";
+  print $AVG "Cluster_Number\tNumber_of_Members\tAverage_Distance_km\tUpper_Distance_Outlier\tExtein_Sequence_Similarity\tLower_Similarity_Outlier\n";
 
   #note that we skip any clusters with less than 2 taxa
   foreach my $cluster (@cluster_fastas){
     my(%cluster_sequences)=READIN_FASTA($cluster);
     my @cluster_ascessions = ( keys %cluster_sequences );
+    my $cluster_size = scalar @cluster_ascessions;
     my($clust_num)=($cluster=~/clusters\/(.*)/);
-    if(scalar(@cluster_ascessions)>=2){
+    if(scalar(@cluster_ascessions)>=3){
       my %cluster_distances;
       foreach my $asc1 (@cluster_ascessions){
         foreach my $asc2 (@cluster_ascessions){
@@ -75,11 +74,13 @@ sub MAIN{
       close OUT;
 
       #now get data for the amount of sequence divergence of the associated exteins
-      my ($similarity_data)=EXTEIN_DIVERGENCE($clust_num,\%cluster_sequences);
+      my ($similarity_data,$similarity_outlier_up,$similarity_outlier_low)=EXTEIN_DIVERGENCE($clust_num,\%cluster_sequences);
       #calculate average distance between all members of the cluster
       #note that any cell with NA is excluded.
       my $sum=0;
       my $count=0;
+      my $upper_outlier="NA";
+      my $lower_outlier="NA";
       foreach my $row_asc (keys %cluster_distances){
         foreach my $col_asc (keys %{$cluster_distances{$row_asc}}){
           if($cluster_distances{$row_asc}{$col_asc} eq "NA"){
@@ -88,20 +89,36 @@ sub MAIN{
           else{
             $sum+=$cluster_distances{$row_asc}{$col_asc};
             $count++;
+
+            if($upper_outlier eq "NA"){
+              $upper_outlier=$cluster_distances{$row_asc}{$col_asc};
+            }
+            elsif($upper_outlier<$cluster_distances{$row_asc}{$col_asc}){
+              $upper_outlier=$cluster_distances{$row_asc}{$col_asc};
+            }
+            else{}
+
+            if($lower_outlier eq "NA"){
+              $lower_outlier=$cluster_distances{$row_asc}{$col_asc};
+            }
+            elsif($lower_outlier>$cluster_distances{$row_asc}{$col_asc}){
+              $lower_outlier=$cluster_distances{$row_asc}{$col_asc};
+            }
+            else{}
           }
         }
       }
       if($count == 0){
-        print $AVG "$clust_num\tNO_GEO_DATA\t$similarity_data\n";
+        print $AVG "$clust_num\t$cluster_size\tINSUFFICIENT_GEO_DATA\t$upper_outlier\t$similarity_data\t$similarity_outlier_low\n";
       }
       else{
         my $average = $sum/$count;
-        print $AVG "$clust_num\t$average\t$similarity_data\n";
+        print $AVG "$clust_num\t$cluster_size\t$average\t$upper_outlier\t$similarity_data\t$similarity_outlier_low\n";
       }
     }
     else{
       #TFTC too few to count
-      print $AVG "$clust_num\tTFTC\n";
+      print $AVG "$clust_num\t$cluster_size\tNA\tNA\tNOT_ENOUGH_MEMBERS_FOR_CALCULATIONS\tNA\n";
     }
   }
 }
@@ -140,15 +157,14 @@ sub EXTEIN_DIVERGENCE{
         }
         else{}
       }
-      else{
-        my %extein_sequences = READIN_FASTA("blast_searches/$filename\_extein.fasta");
-        foreach my $ext_asc (keys %extein_sequences){
-          my $ext_seq_w_int = $extein_sequences{$ext_asc};
-          my $int_seq = $intein_sequences{$accession};
-          $ext_seq_w_int =~ s/$int_seq//g;
-          print EXT "$ext_asc\n";
-          print EXT "$ext_seq_w_int\n";
-        }
+      else{}
+      my %extein_sequences = READIN_FASTA("blast_searches/$filename\_extein.fasta");
+      foreach my $ext_asc (keys %extein_sequences){
+        my $ext_seq_w_int = $extein_sequences{$ext_asc};
+        my $int_seq = $intein_sequences{$accession};
+        $ext_seq_w_int =~ s/$int_seq//g;
+        print EXT "$ext_asc\n";
+        print EXT "$ext_seq_w_int\n";
       }
     }
     else{
@@ -160,9 +176,9 @@ sub EXTEIN_DIVERGENCE{
   STANDARDIZE_FASTA("blast_searches/$cluster_number\_extein.fasta");
   system("muscle -align blast_searches/$cluster_number\_extein.fasta -output blast_searches/$cluster_number\_extein.fasta.aligned");
 
-  my $sequence_similarity = SEQUENCE_SIMILARITY("blast_searches/$cluster_number\_extein.fasta.aligned");
+  my($sequence_similarity,$seq_out_up,$seq_out_low) = SEQUENCE_SIMILARITY("blast_searches/$cluster_number\_extein.fasta.aligned");
 
-  return($sequence_similarity);
+  return($sequence_similarity,$seq_out_up,$seq_out_low);
 }
 
 sub SEQUENCE_SIMILARITY{
@@ -172,9 +188,11 @@ sub SEQUENCE_SIMILARITY{
   my %sequence_data = READIN_FASTA($sequence_file);
   my @pairwise_seq_sim;
 
+  my $sim_out_up = "NA";
+  my $sim_out_low = "NA";
   foreach my $seq_asc1 (keys %sequence_data){
     my $sequence_length = length($sequence_data{$seq_asc1});
-    print "Length of $seq_asc1 is $sequence_length\n";
+    #print "Length of $seq_asc1 is $sequence_length\n";
     foreach my $seq_asc2 (keys %sequence_data){
       my $similarity_counter = 0;
       my $length_to_average_over = $sequence_length;
@@ -192,6 +210,22 @@ sub SEQUENCE_SIMILARITY{
         }
       }
       my $similarity = ($similarity_counter/$length_to_average_over);
+
+      if($sim_out_low eq "NA"){
+        $sim_out_low=$similarity ;
+      }
+      elsif($sim_out_low>$similarity ){
+        $sim_out_low=$similarity ;
+      }
+      else{}
+
+      if($sim_out_up eq "NA"){
+        $sim_out_up=$similarity ;
+      }
+      elsif($sim_out_up<$similarity ){
+        $sim_out_up=$similarity ;
+      }
+      else{}
       #print "Similarity is $similarity.\nTotal Length of Alignment sans uninformative sites is $length_to_average_over\nSimilar Sites count is $similarity_counter\n\n";
       push(@pairwise_seq_sim,$similarity);
     }
@@ -204,7 +238,7 @@ sub SEQUENCE_SIMILARITY{
     $running_average+=$percent;
   }
   my $avg_sim = $running_average/$arr_size;
-  return($avg_sim);
+  return($avg_sim,$sim_out_up,$sim_out_low);
 }
 
 sub FILTER_BLAST{
