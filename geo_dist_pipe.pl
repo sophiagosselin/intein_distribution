@@ -368,7 +368,9 @@ sub GET_METADATA_PARENT{
   my $count_reporter=0;
 
   foreach my $asc (@ascs){
+    #print "Acession is $asc!\n";
     my($phagename)=($asc=~/\>.*?\_(.*?)\_.*/);
+    #print "Captured the phage name $phagename!\n";
     push(@phagenames, $phagename);
     $paired_keys{$asc}=$phagename;
     $count_reporter++;
