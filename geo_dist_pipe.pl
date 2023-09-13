@@ -9,13 +9,6 @@ use Math::Trig;
 use Math::Trig qw(great_circle_distance deg2rad);
 use Data::Dumper;
 
-#FUTURE DIRECTIONS
-#find any clusters where there is a distance value above X threshold
-#make phylogenies of those clusters.
-
-#compare clustering at 98 98.5 99 and 99.5% seqid
-
-#send peter info on how much money you were promised over the summer from any sources.
 
 #CLEANUP AND ERROR PREP
 #system("rm error.log");

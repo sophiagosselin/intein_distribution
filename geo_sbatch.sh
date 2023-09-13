@@ -20,7 +20,7 @@ module load usearch
 
 #add libraries to path
 export PERL5LIB=/home/FCAM/sgosselin/perl5/lib/perl5
-export export PATH=~/home/FCAM/sgosselin/phamdb:$PATH
+export PATH=~/home/FCAM/sgosselin/phamdb:$PATH
 
 
 perl geo_dist_pipe.pl all_matches.fasta .975 32 /home/FCAM/sgosselin/phamdb/allphams.faa
