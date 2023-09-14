@@ -14,19 +14,45 @@ use File::Copy;
 #inputs/globals
 #input 1 is location of fasta files
 my $input_directory = $ARGV[0];
-if($input_directory!~/\//){
-  $input_directory.="\/";
-}
+
 #input 2 is your nucleotide database (ran with parse_seqids)
 my $database = $ARGV[1];
 
+#input 3 is name of output directory
+my $output_directory = $ARGV[2];
+
+my(@input_files) = GET_INPUTS($input_directory);
+
 MAIN();
+
+sub GET_INPUTS{
+  my $directory = shift;
+  my @files;
+
+  if($directory!~/\//){
+    $directory.="\/";
+  }
+
+  my @directory_files = glob "$directory*";
+  
+  #check if directories or not
+  foreach my $input (@directory_files){
+    my $f_or_d = "$directory"."$input";
+    print "Test\t$f_or_d\n";
+    if(-f "$f_or_d"){
+      push(@files,"$f_or_d");
+    }
+    else{
+      my(@recursive_files)=GET_INPUTS("$f_or_d");
+      push(@files,@recursive_files);
+    }
+  }
+  return(@files);
+}
 
 sub MAIN{
 
-  mkdir("intein_nucl_seq_clusters");
-
-  my @input_files = glob "$input_directory*";
+  mkdir("$output_directory");
 
   foreach my $fastafile (@input_files){
     #these lines can be commented out. For my use only.
@@ -123,8 +149,8 @@ sub GET_NUCLEOTIDES{
   #get nuc seqs
   print "Extracting nucleotide sequences\n\n";
   my($file_handle)=($input_fasta=~/.*?\/(.*?)\.fasta/);
-  mkdir("intein_nucl_seq_clusters\/$file_handle");
-  system("blastdbcmd -db $database -entry_batch range.txt -outfmt \"%f\" > intein_nucl_seq_clusters\/$file_handle\/$file_handle.fna");
+  mkdir("$output_directory\/$file_handle");
+  system("blastdbcmd -db $database -entry_batch range.txt -outfmt \"%f\" > $output_directory\/$file_handle\/$file_handle.fna");
 
 }
 
