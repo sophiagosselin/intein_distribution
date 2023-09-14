@@ -116,6 +116,7 @@ sub GET_FULL_SEQUENCE{
   close $blast6;
 
   foreach my $check (keys %memory){
+    print "$check\t$memory{$check}\n";
     if($memory{$check} ne "0"){
       next;
     }
@@ -123,8 +124,9 @@ sub GET_FULL_SEQUENCE{
       foreach my $potential (keys %no_match){
         foreach my $inc (keys %{$no_match{$potential}}){
           my @data = split(/\t/,$no_match{$potential}{$inc});
+          print "BLAST line for testing:\n$no_match{$potential}{$inc}\nKey1: $potential\nKey2: $inc\n\n";
           my ($phagename)=($data[1]=~/(.*?)\_\d+?\_.*/);
-          if($potential=~/$phagename/){
+          if($check=~/$phagename/){
             if($data[2] eq "100.000"){
               print $range "$data[1]\n";
               $memory{$check}=$data[1];
@@ -139,6 +141,9 @@ sub GET_FULL_SEQUENCE{
           }
         }
       }
+    }
+    if($memory{$check} eq "0"){
+      die print "$check found no matches.\n";
     }
   }
   close $range;
@@ -169,16 +174,16 @@ sub GET_EXTEIN_ONLY{
     #get assoicated intein asc
     my($partial_key)=($key=~/^\>(.*?\_\d+?)\_.*/);
     if(!defined $partial_key){
-      ($partial_key)=($key=~/(.*?\_.+?)\_.*/);
+      ($partial_key)=($key=~/\>(.*?\_.+?)\_.*/);
       if(!defined $partial_key){
         print "MOTHERFUCKER $key\n";
         die;
       }
     }  
-    #print "Partial Key $partial_key\n";
+    print "Partial Key $partial_key\n";
     my($complete_int_key) = "";
     foreach my $int_key (keys %intein_content){
-      #print "Int Key $int_key\n\n";
+      print "Int Key $int_key\n\n";
       if($int_key=~/$partial_key/){
         $complete_int_key = $int_key;
       }
@@ -188,6 +193,7 @@ sub GET_EXTEIN_ONLY{
     }
     if($complete_int_key eq ""){
       foreach my $tempkey (keys %paired_mem){
+        print "$tempkey\t$paired_mem{$tempkey}\n\n";
         if($paired_mem{$tempkey}=~/$partial_key/){
           $complete_int_key=">$tempkey";
         }
@@ -198,7 +204,7 @@ sub GET_EXTEIN_ONLY{
     }
 
     if($complete_int_key eq ""){
-      print "I HATE THIS SHIT $KEY\n";
+      print "I HATE THIS SHIT $key\n";
       die;
     }
     
