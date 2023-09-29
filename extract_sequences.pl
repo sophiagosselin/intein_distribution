@@ -16,7 +16,10 @@ use Data::Dumper;
 
 
 #notes: need to make hash pairing everything from blast searches
-
+#module load perl
+#module load blast/2.11.0
+#export BLASTDB=$BLASTDB:/home/FCAM/sgosselin/phagesdb/
+#export BLASTDB=$BLASTDB:/home/FCAM/sgosselin/phamdb/
 
 
 
@@ -47,18 +50,33 @@ sub SETUP{
 
 sub MAIN{
 
+    mkdir("completed_inputs");
+
     foreach my $fastafile (@intein_prot_fastas){
 
-        #get complete protein sequences from intein sequences        
+        #get complete protein sequences from intein sequences
+        print "Getting full amino acid sequences for $fastafile\n";        
         my($full_prot_seq_file,$hashref) = GET_FULL_PROTEIN_SEQ($fastafile);
         my(%full_intein_paired_memory) = %{$hashref};
 
         #get extein sequence from complete sequence using intein sequences.
+        print "Getting extein amino acid sequences for $fastafile\n";  
         my $extein_prot_seq_file = GET_EXTEIN_SEQ($full_prot_seq_file,$fastafile,\%full_intein_paired_memory);
         
+        print "Getting intein nucleotide sequences for $fastafile\n"; 
         GET_NUCLEOTIDES($fastafile,"intein_nucl_seq_clusters");
+
+        print "Getting full nucleotide sequences for $fastafile\n"; 
         GET_NUCLEOTIDES($full_prot_seq_file,"full_nucl_seq_clusters");
+
+        print "Getting extein nucleotide sequences for $fastafile\n"; 
         GET_NUCLEOTIDES($extein_prot_seq_file,"extein_nucl_seq_clusters");
+
+        #check if nucleotide files are missing content
+
+        print "Completed work on $fastafile\n";
+        my($copy_handle)=($fastafile=~/.*\/(.*)/);
+        copy("$fastafile","completed_inputs\/$copy_handle");
 
     }
 }
@@ -111,12 +129,12 @@ sub GET_NUCLEOTIDES{
     my %memory_hash=%{$hashref3};
 
     #check to see if you missed results. Push missed matches to a second file for nr search
-    open(my $nomatch, "+> no_matches.fasta");
+    open(my $nomatch, ">> no_matches.fasta");
     foreach my $matched_query (keys %blast_matches){
         my($paired_intein_match)=FIND_ASSOCIATED_FULL_ASC($matched_query,\%fasta_data);
         my $did_it_match = $memory_hash{$paired_intein_match}{"prot_blast_asc"};
         if(!defined $did_it_match){
-            print $nomatch "$paired_intein_match\n$fasta_data{$paired_intein_match}\n";
+            print $nomatch "$paired_intein_match\t$fasta_file\t$outdir\n$fasta_data{$paired_intein_match}\n";
         }
         else{
             next;
@@ -129,16 +147,15 @@ sub GET_NUCLEOTIDES{
     EXTRACT_MATCHES(\%blast_matches,$nucl_database,"$outdir\/$file_handle.fna",1);
 
     #attempts to find matches to sequences not in main database.
-    my($matched_file)=CHECK_NCBI("no_matches.fasta");
-    
-    my %matched_seq = READIN_FASTA($matched_file);
+    #my($matched_file)=CHECK_NCBI("no_matches.fasta");
+    #my %matched_seq = READIN_FASTA($matched_file);
 
     #append seqs from NCBI to main fasta file
-    open here
-    foreach my $key (keys %matched_seq){
-
-
-    }
+    #open(my $append, ">> $outdir\/$file_handle.fna");
+    #foreach my $key (keys %matched_seq){
+    #    print $append "$key\n$matched_seq{$key}\n";
+    #}
+    #close $append;
 }
 
 sub CHECK_NCBI{
@@ -159,6 +176,7 @@ sub CHECK_NCBI{
         my $did_it_match = $memory_hash{$paired_intein_match}{"prot_blast_asc"};
         if(!defined $did_it_match){
             print $csv "$paired_intein_match\n$nomatch_seqs{$paired_intein_match}\n";
+            print "Could not find match to $paired_intein_match in either your original nucleotide database, or the NCBI rn database.\n";
         }
         else{
             next;
@@ -166,7 +184,7 @@ sub CHECK_NCBI{
     }
     close $csv;
 
-    EXTRACT_MATCHES(\%blast_matches,$nr_database,"matched.fna",1);
+    EXTRACT_MATCHES(\%blast_matches,$nr_database,"matched.fna","1");
 
     return("matched.fna");
 }
@@ -238,7 +256,7 @@ sub GET_FULL_PROTEIN_SEQ{
     #create range file and extract associated sequences
     mkdir("full_prot_seq_clusters");
     my($file_handle)=($fasta=~/.*\/(.*?)\./);
-    EXTRACT_MATCHES(\%blast_matches,$prot_database,"full_prot_seq_clusters\/$file_handle.faa",0);
+    EXTRACT_MATCHES(\%blast_matches,$prot_database,"full_prot_seq_clusters\/$file_handle.faa","0");
 
     #finaly pair up the extracted full seq ascs with their blast counterparts
     my $match_counter=0;
@@ -287,17 +305,17 @@ sub EXTRACT_MATCHES{
         my @split_data = split(/\t/,$seqs_for_range{$asc});
         
         #if working w/ nucleotides need to include start and end points in range file
-        if($mode == 1){
+        if($mode eq "1"){
             my $plus_or_minus = ($split_data[3]-$split_data[4]);
             if($plus_or_minus >= 0){
                 $strand = "minus";
                 #print "Line is $_\n";
-                print $range "$split_data[1]\ $split_data[3]\-$split_data[2]\ $strand\n";
+                print $range "$split_data[1]\ $split_data[4]\-$split_data[3]\ $strand\n";
             }
             else{
                 #print "Line is $_\n";
                 $strand = "plus";
-                print $range "$split_data[1]\ $split_data[2]\-$split_data[3]\ $strand\n";
+                print $range "$split_data[1]\ $split_data[3]\-$split_data[4]\ $strand\n";
             }
         }
 
