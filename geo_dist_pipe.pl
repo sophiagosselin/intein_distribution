@@ -52,14 +52,20 @@ sub MAIN{
     my @cluster_ascessions = ( keys %cluster_sequences );
     my $cluster_size = scalar @cluster_ascessions;
     my($clust_num)=($cluster=~/clusters\/(.*)/);
+    open(my $LATLONG, "> cluster_$clust_num\_latlong_log.txt");
+    print $LATLONG, "ascession\tLattitude\tLongitude\n";
     if(scalar(@cluster_ascessions)>=3){
       my %cluster_distances;
       foreach my $asc1 (@cluster_ascessions){
+        my $long_print = $long_lat{$asc1}{"long"};
+        my $lat_print = $long_lat{$asc1}{"lat"};
+        print $LATLONG "$asc1\t$lat_print\t$long_print\n";
         foreach my $asc2 (@cluster_ascessions){
           my $distance = GET_KM_DISTANCE($long_lat{$asc1}{"long"},$long_lat{$asc1}{"lat"},$long_lat{$asc2}{"long"},$long_lat{$asc2}{"lat"},$asc1,$asc2);
           $cluster_distances{$asc1}{$asc2}=$distance;
         }
       }
+      close $LATLONG;
       #print out matrix for later supplemental data
       my $toprint = MATRIX_FROM_HASH(\%cluster_distances);
       open(OUT, "+> $cluster.dist");

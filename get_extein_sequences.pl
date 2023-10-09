@@ -149,7 +149,7 @@ sub GET_FULL_SEQUENCE{
   close $range;
   
   #get full seqs
-  print "Extracting full protein sequences\n\n";
+  #print "Extracting full protein sequences\n\n";
   my($file_handle)=($input_fasta=~/.*?\/(.*?)\.fasta/);
   mkdir("full_prot_seq_clusters\/$file_handle");
   system("blastdbcmd -db $database -entry_batch range.txt -outfmt \"%f\" > full_prot_seq_clusters\/$file_handle\/$file_handle.faa");
