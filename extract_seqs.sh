@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=phagesdb_get_intein_ass0ciated_seqs
+#SBATCH --job-name=peanuts_get_seq_nolim
 #SBATCH --nodes=1
 #SBATCH --qos=general
 #SBATCH --ntasks=1
@@ -18,7 +18,7 @@ module load perl/5.36.0
 
 #add libraries to path
 export BLASTDB=$BLASTDB:/home/FCAM/sgosselin/phagesdb/
-export BLASTDB=$BLASTDB:/home/FCAM/sgosselin/phamdb/
+export BLASTDB=$BLASTDB:/home/FCAM/sgosselin/allphams/
 
 
-perl extract_sequences.pl intein_prot_seq_clusters/ allphams.faa phagesdb.fna nt
+perl extract_sequences.pl inputs/ /home/FCAM/sgosselin/allphams/allphams.faa /home/FCAM/sgosselin/phagesdb/phagesdb.fna
