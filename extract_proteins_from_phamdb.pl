@@ -16,23 +16,20 @@ my $database = $ARGV[0];
 #ascession to look for
 my $search_term = $ARGV[1];
 
+my @phams;
 #takes database file and finds all entries with the search term in ascession location
 open(IN, "< $database");
-open(INTERMIDIATE, "+> intermidiate.fasta");
+my $toggle = 0;
 while(<IN>){
   chomp;
   if($_=~/\>/){
-    my($pham,$ascession) = ($_=~/\>\w+?\s+?\w+?\s+?(\w+?)\s+?(\w+?)\s+?\w+/);
-    if(!$ascession){
-      ($pham,$ascession) = ($_=~/\>\w+?\s+?\w+?\s+?(\w+?)\s+?(\w+)/);
-    }
-    if($pham eq "None"){
-      next;
-    }
-    if($ascession eq $search_term){
-      print INTERMIDIATE "$_\n";
+    if($_=~/$search_term/){
+      my($pham)=($_=~/\>.*\_UID\_\d+\s+.*?\s+(\d+?)\s+\w+\s+\d+$/);
+      push(@phams,$pham);
+      $toggle=1;
     }
     else{
+      $toggle=0;
       next;
     }
   }
@@ -41,41 +38,35 @@ while(<IN>){
   }
 }
 close IN;
-close INTERMIDIATE;
 
-#takes intermidiate file and pulls the pham #
-my @phams;
-open(IN, "< intermidiate.fasta");
-while(<IN>){
-  chomp;
-  my($pham) = ($_=~/\>.*?\ .*?\ (.*?)\ .*?\ .*/);
-  push(@phams,$pham);
-}
-close IN;
-unlink "intermidiate.fasta";
-
-#get final extracted dataset
-my $found_toggle = 0;
-open(IN, "< $database");
+#takes list of phams and ensures these are extracted as well.
 open(OUT, "+> $search_term.fasta");
+open(IN, "< $database");
 while(<IN>){
   chomp;
   if($_=~/\>/){
-    $found_toggle = 0;
-    my($pham) = ($_=~/\>\w+?\s+?\w+?\s+?(\w+?)\s+?\w+?\s+?\w+/);
-        if(!$pham){
-          ($pham) = ($_=~/\>\w+?\s+?\w+?\s+?(\w+?)\s+?\w+/);
-        }
-    if ( grep( /^$pham$/, @phams ) ) {
-      print OUT "$_\n";
-      $found_toggle = 1;
+    $toggle = 0;
+    my($pham_to_check)=($_=~/\>.+\_UID\_\d+\s+.*?\s+(\d+?)\s+\w+\s+\d+$/);
+    if(!defined $pham_to_check){
+      ($pham_to_check)=($_=~/\>.+\_UID\_\d+\s+.*?\s+(\d+?)\s+/);
+      if(!defined $pham_to_check){
+        die print "Could not find pham in $_!\n";
+      }
     }
-    else{
-      next;
+    foreach my $check (@phams){
+      if($pham_to_check eq $check){
+        $toggle=1;
+        print "Found it!\nFrom $_\n\n";
+        print OUT "$_\n";
+        last;
+      }
+      else{
+        next;
+      }
     }
   }
   else{
-    if($found_toggle == 1){
+    if($toggle == 1){
       print OUT "$_\n";
     }
     else{
