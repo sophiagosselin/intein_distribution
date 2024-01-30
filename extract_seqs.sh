@@ -21,4 +21,4 @@ export BLASTDB=$BLASTDB:/home/FCAM/sgosselin/phagesdb/
 export BLASTDB=$BLASTDB:/home/FCAM/sgosselin/allphams/
 
 
-perl extract_sequences.pl inputs/ /home/FCAM/sgosselin/allphams/allphams.faa /home/FCAM/sgosselin/phagesdb/phagesdb.fna
+perl extract_sequences_org.pl inputs/ /home/FCAM/sgosselin/allphams/allphams.faa /home/FCAM/sgosselin/phagesdb/phagesdb.fna
