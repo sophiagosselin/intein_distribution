@@ -13,17 +13,14 @@ use Data::Dumper;
 #also outputs the associated nucleotide sequences for each associated type of sequence 
 #(intein, extein, and complete acession)
 
+#24_02_09
+#Past Sophia wrote terrible code. Current Sophia hates you. AHHHHHH
 
-
-#23_11_13_notes: 
-#Fix the first subroutine regarding parsing BLAST and finding complete sequence matches
-
-
+#notes: need to make hash pairing everything from blast searches
 #module load perl
 #module load blast/2.11.0
+#export BLASTDB=$BLASTDB:/home/FCAM/sgosselin/allphams/
 #export BLASTDB=$BLASTDB:/home/FCAM/sgosselin/phagesdb/
-#export BLASTDB=$BLASTDB:/home/FCAM/sgosselin/phamdb/
-
 
 
 #inputs/globals
@@ -36,54 +33,97 @@ my $prot_database = $ARGV[1];
 #input 3 is your nucleotide database (ran with parse_seqids)
 my $nucl_database = $ARGV[2];
 
+#START
+#####################################################################
 
+#READIN INPUT FILES
 my(@intein_prot_fastas) = SETUP();
 MAIN();
 
-sub SETUP{
-    #make directories, and get files needed for downstream processes
-    my(@intein_fasta)=GET_INPUTS_RECURSIVE($input_directory);
-
-    mkdir("full_prot_seq_clusters");
-    mkdir("completed_inputs");
-    mkdir("blast_files");
-    return(@intein_fasta);
-
-}
-
 sub MAIN{
 
-    foreach my $input (@intein_prot_fastas){
-        #split input incase it is multifasta
-        my @queries = SPLIT_FASTA($input);
+    mkdir("completed_inputs");
 
-        foreach my $fastafile (@queries){
-            
-            #get complete protein sequences from intein sequences
-            print "Getting full amino acid sequences for $fastafile\n";        
-            my($full_prot_seq_file,$hashref) = GET_FULL_PROTEIN_SEQ($fastafile);
-            my(%full_intein_paired_memory) = %{$hashref};
+    foreach my $fastafile (@intein_prot_fastas){
+        my %file_specific_memory_hash; #has following format: 
+        #{intein aa ascs as keys from input file}
+        ##{"full_aa_asc"} -> asc from file
+        ##{"full_nuc_asc"} -> asc from file
+        ##{"intein_nuc_asc"} -> asc from file
 
-            #get extein sequence from complete sequence using intein sequences.
-            print "Getting extein amino acid sequences for $fastafile\n";  
-            my $extein_prot_seq_file = GET_EXTEIN_SEQ($full_prot_seq_file,$fastafile,\%full_intein_paired_memory);
+        #get complete protein sequences from intein sequences
+        print "Getting full amino acid sequences for $fastafile\n";        
+        my($full_prot_file,$hashref1,@queries_w_no_prot_match) = GET_FULL_PROTEIN_SEQ($fastafile);
+        %file_specific_memory_hash = %{$hashref1};
+
+        #get extein sequence from complete sequence using intein sequences.
+        print "Getting extein amino acid sequences for $fastafile\n";  
+        GET_EXTEIN_SEQ($full_prot_file,$fastafile,"extein_prot_seq","faa",0,\%file_specific_memory_hash,@queries_w_no_prot_match);
         
-            print "Getting intein nucleotide sequences for $fastafile\n"; 
-            GET_NUCLEOTIDES($fastafile,"intein_nucl_seq_clusters");
+        print "Getting intein nucleotide sequences for $fastafile\n"; 
+        my($intein_nuc_file,$array_ref1,$hashref2) = GET_NUCLEOTIDES($fastafile,1,"intein_nucl_seq",\%file_specific_memory_hash);
+        my @queries_w_no_nuc_matches = @{$array_ref1};
+        %file_specific_memory_hash = %{$hashref1};
 
-            print "Getting full nucleotide sequences for $fastafile\n"; 
-            GET_NUCLEOTIDES($full_prot_seq_file,"full_nucl_seq_clusters");
+        print "Getting full nucleotide sequences for $fastafile\n"; 
+        my($full_nuc_file,$array_ref2,$hashref3) = GET_NUCLEOTIDES($full_prot_file,0,"full_nucl_seq",\%file_specific_memory_hash,@queries_w_no_nuc_matches);
+        @queries_w_no_nuc_matches = @{$array_ref2};
+        %file_specific_memory_hash = %{$hashref3};
 
-            print "Getting extein nucleotide sequences for $fastafile\n"; 
-            GET_NUCLEOTIDES($extein_prot_seq_file,"extein_nucl_seq_clusters");
+        print "Getting extein nucleotide sequences for $fastafile\n"; 
+        GET_EXTEIN_SEQ($full_nuc_file,$intein_nuc_file,"extein_nucl_seq","fna",1,\%file_specific_memory_hash,@queries_w_no_nuc_matches);
 
-            #check if nucleotide files are missing content
+        #check if nucleotide files are missing content
+        print "Completed work on $fastafile\n";
+        my($copy_handle)=($fastafile=~/.*\/(.*)/);
+        copy("$fastafile","completed_inputs\/$copy_handle");
 
-            print "Completed work on $fastafile\n";
-            my($copy_handle)=($fastafile=~/.*\/(.*)/);
-            copy("$fastafile","completed_inputs\/$copy_handle");
-        }
+        PRINT_NON_MATCHES(\@queries_w_no_prot_match,\@queries_w_no_nuc_matches,$fastafile);
+
+        #for the sake of your sanity, this prints a key for which names are equivelant
+        PRINT_KEY(\%file_specific_memory_hash);
+
     }
+}
+
+sub PRINT_KEY{
+    my %key = %{ my $hashref1 = shift};
+
+    #{intein aa ascs as keys from input file}
+    ##{"full_aa_asc"} -> asc from file
+    ##{"full_nuc_asc"} -> asc from file
+    ##{"intein_nuc_asc"} -> asc from file
+
+
+    open(my $keyfile, "+> accession_key.txt");
+    print $keyfile "Intein_AA\tIntein_Nuc\tFull_Seq_AA\tFull_Seq_Nuc\tExtein_AA\tExtein_Nuc\n";
+
+    foreach my $intein_aa_acc (keys %key){
+        print $keyfile "$intein_aa_acc\t$key{$intein_aa_acc}{\"intein_nuc_asc\"}\t$key{$intein_aa_acc}{\"full_aa_asc\"}\t$key{$intein_aa_acc}{\"full_nuc_asc\"}\t$key{$intein_aa_acc}{\"full_aa_asc\"}\_extein_only\t$key{$intein_aa_acc}{\"full_nuc_asc\"}\_extein_only\n";
+    }
+
+    close $keyfile;
+}
+
+sub PRINT_NON_MATCHES{
+    #prints non matches for given fasta file to new files
+    my @prot_no_match = @{ my $arrayref = shift};
+    my @nucl_no_match = @{ my $arrayref2 = shift};
+    my $infasta = shift;
+    my($file_handle)=($infasta=~/.*\/(.*?)\./);
+
+    mkdir("no_matches");
+    open(my $out1, "+> no_matches\/$file_handle\_no_matches_nucleotide\.txt");
+    foreach my $no_match (@nucl_no_match){
+        print $out1 "$no_match\n";
+    }
+    close $out1;
+
+    open(my $out2, "+> no_matches\/$file_handle\_no_matches_aa\.txt");
+    foreach my $no_match2 (@prot_no_match){
+        print $out2 "$no_match2\n";
+    }
+    close $out2;
 }
 
 sub GET_INPUTS_RECURSIVE{
@@ -118,49 +158,107 @@ sub GET_INPUTS_RECURSIVE{
 
 sub GET_NUCLEOTIDES{
     #takes protein fasta file as input 
-    #???
     #returns the associated nucleotide sequence for each protein sequence in fasta file
+    #saves acs to paired memory hash
     my $fasta_file = shift;
+    my $mode = shift;
     my $outdir = shift;
-
-    my %fasta_data = READIN_FASTA($fasta_file);
+    my %global_memory_copy = %{ my $hashref = shift };
+    my @nomatch = @_;
 
     #blast file against database
-    my($blast_file)=RUN_BLAST("tblastn",$nucl_database,$fasta_file,"\"6 qseqid sseqid pident sstart send\"");
+    my($blast_file)=RUN_BLAST("tblastn -db_gencode 11 -seg no",$nucl_database,$fasta_file,"\"6 qseqid sseqid pident sstart send\"");
 
-    #parse it!
+    #READIN query fasta
+    my %fasta_data = READIN_FASTA($fasta_file);
+
+    #parse BLAST file
     my($hashref2,$hashref3)=PARSE_BLAST($blast_file,\%fasta_data,1);
     my %blast_matches = %{$hashref2};
-    my %memory_hash=%{$hashref3};
+    my %local_memory_hash=%{$hashref3};
 
-    #check to see if you missed results. Push missed matches to a second file for nr search
-    open(my $nomatch, ">> no_matches.fasta");
-    foreach my $matched_query (keys %blast_matches){
-        my($paired_intein_match)=FIND_ASSOCIATED_FULL_ASC($matched_query,\%fasta_data);
-        my $did_it_match = $memory_hash{$paired_intein_match}{"prot_blast_asc"};
-        if(!defined $did_it_match){
-            print $nomatch "$paired_intein_match\t$fasta_file\t$outdir\n$fasta_data{$paired_intein_match}\n";
-        }
-        else{
-            next;
-        }
-    }
-    close $nomatch;
-    
+    #Extract matches to fna file
     mkdir("$outdir");
+    move($blast_file,"$outdir\/$blast_file");
     my($file_handle)=($fasta_file=~/.*\/(.*?)\./);
     EXTRACT_MATCHES(\%blast_matches,$nucl_database,"$outdir\/$file_handle.fna",1);
 
-    #attempts to find matches to sequences not in main database.
-    #my($matched_file)=CHECK_NCBI("no_matches.fasta");
-    #my %matched_seq = READIN_FASTA($matched_file);
+    #append a unique ID to each line 
+    APPEND_UID("$outdir\/$file_handle.fna");
 
-    #append seqs from NCBI to main fasta file
-    #open(my $append, ">> $outdir\/$file_handle.fna");
-    #foreach my $key (keys %matched_seq){
-    #    print $append "$key\n$matched_seq{$key}\n";
-    #}
-    #close $append;
+    #check to see if you missed results. Push missed matches to a an array
+    my %nucl_seq_fastadata = READIN_FASTA("$outdir\/$file_handle.fna");
+
+    foreach my $prot_asc (keys %local_memory_hash){
+        my $tracker = 0;
+
+        foreach my $nucl_seq_asc (keys %nucl_seq_fastadata){
+
+            #get values to confirm a match is paired correctly
+            my $check_name = $local_memory_hash{$prot_asc}{"subject_blast_asc"};
+            my $check_sstart = $local_memory_hash{$prot_asc}{"sstart"};
+            my $check_sstop = $local_memory_hash{$prot_asc}{"send"};
+            my @checkvals = ($check_name,$check_sstart,$check_sstop);
+            my $toggle = 0;
+
+            foreach my $check (@checkvals){
+                #print "$nucl_seq_asc vs. $check\n";
+                if($nucl_seq_asc=~/$check/){
+                    next;
+                }
+                else{
+                    $toggle = 1;
+                }
+            }
+
+            #compare said asc to full seq asc 
+            if($toggle == 0){
+                #print "Nucl acs $nucl_seq_asc passed checkpoint 1!\n";
+                #find the correct bin to place it in within the global memory hash
+                foreach my $key1 (keys %global_memory_copy){
+                    #check if this is an intein asc
+                    if($mode == 1){
+                        if($key1 eq $prot_asc){
+                            $global_memory_copy{$prot_asc}{"intein_nuc_asc"}=$nucl_seq_asc;
+                            #print "FOR DEBUGGING: The intein nuc asc for $prot_asc is $nucl_seq_asc\n";
+                            #print "The BLAST results claim that $nucl_seq_asc equals $check_name\n\n";
+                            $tracker = 1;
+                            last;
+                        }
+                        else{
+                            next;
+                        }
+                    }
+                    else{
+                        #check the full seq ascs
+                        if($global_memory_copy{$key1}{"full_aa_asc"} eq $prot_asc){
+                            $global_memory_copy{$key1}{"full_nuc_asc"}=$nucl_seq_asc;
+                            #print "FOR DEBUGGING: The full nuc asc for $prot_asc is $nucl_seq_asc\n";
+                            $tracker = 1;
+                            last;
+                        }
+                        else{
+                            next;
+                        }
+                    }
+                }
+
+                last;
+            }
+
+            else{
+                next;
+            }
+        }
+
+        #check if you could not find a match for the intein asc
+        if($tracker == 0){
+            print "\n\nCould not find match to $prot_asc in nuc seq ascs.\n";
+            push(@nomatch,$prot_asc);
+        }
+    }
+
+    return("$outdir\/$file_handle.fna",\@nomatch,\%global_memory_copy);
 }
 
 sub GET_EXTEIN_SEQ{
@@ -168,24 +266,70 @@ sub GET_EXTEIN_SEQ{
     #returns a file containing only the extein sequence of the full sequence
     my $full_seq_fasta = shift;
     my $intein_seq_fasta = shift;
+    my $dir_name = shift;
+    my $extension = shift;
+    my $flag = shift; #0 for aa, 1 for nucl
     my %paired_memory = %{my $hashref = shift};
+    my @seqs_to_skip = @_;
+
+    #readin files
     my %full_seq_fastadata = READIN_FASTA($full_seq_fasta);
     my %intein_fastadata = READIN_FASTA($intein_seq_fasta);
 
-
-    my($file_handle)=($full_seq_fasta=~/.*?\/(.*?)\.faa/);
-    mkdir("extein_prot_seq_clusters");
-    open(my $extein_out, "+> extein_prot_seq_clusters\/$file_handle\_extein.faa");
+    #open output file
+    my($file_handle)=($full_seq_fasta=~/.*?\/(.*?)\..*/);
+    mkdir($dir_name);
+    my $file_to_print = "$dir_name\/$file_handle\_extein.$extension";
+    
+    open(my $extein_out, "+> $file_to_print");
+    
+    #for each intein sequence, find the associated full sequence ascession
     foreach my $intein_asc (keys %intein_fastadata){
-        #for each intein sequence, find the associated full sequence ascession
-        my $intein_sequence = $intein_fastadata{$intein_asc};
-        my $full_asc = $paired_memory{$intein_asc}{"full_seq_original_asc"};
+
+        #check if current intein was flagged to be skipped
+        if(grep(/^$intein_asc$/, @seqs_to_skip)){
+            next;
+        }
+
+        #find the associated full seq asc
+        my $full_asc;
+        my $root_key; #not needed for AA
+        if($flag == 0){
+            #for aa seqs it is:
+            $full_asc = $paired_memory{$intein_asc}{"full_aa_asc"};
+            if(!defined $full_asc){
+                die print "Could not find paired full amino acid accession for $intein_asc!\n\n";
+            }
+        }
+        else{
+            #for nucleotides: get key 1
+            #print "------------------------------------------------------\n\nNeed to find full nuc asc paired with $intein_asc\n\n";
+            foreach my $key1 (keys %paired_memory){
+                #print "Checking key $key1 and it's value for intein_nuc_asc $paired_memory{$key1}{\"intein_nuc_asc\"}\n";
+                #check if this match was never found
+                next if(!defined $paired_memory{$key1}{"intein_nuc_asc"});
+                if($paired_memory{$key1}{"intein_nuc_asc"} eq $intein_asc){
+                    #print "Found match for $intein_asc!\nAssociated full nuc asc is: $paired_memory{$key1}{\"full_nuc_asc\"}\n\n";
+                    $full_asc = $paired_memory{$key1}{"full_nuc_asc"};
+                    last;
+                }
+                else{
+                    next;
+                }
+            }
+            if(!defined $full_asc){
+                die print "Could not find paired full nucleotide accession for $intein_asc!\n\n";
+            }
+        }
+
+        #begin to get extein seqs
         my $full_sequence = $full_seq_fastadata{$full_asc};
 
         #splice the intein out of the full sequence
+        my $intein_sequence = $intein_fastadata{$intein_asc};
         my($cterminal)=($full_sequence=~/^(.*?)$intein_sequence.*$/);
         my($nterminal)=($full_sequence=~/^.*?$intein_sequence(.*)$/);
-
+        
         #put the pieces back together
         my $extein_sequence = $cterminal.$nterminal;
         
@@ -197,21 +341,22 @@ sub GET_EXTEIN_SEQ{
         }
 
         #to output
-        print $extein_out "$full_asc\_extein\_only\n$extein_sequence\n";
+        print $extein_out "$full_asc\n$extein_sequence\n";
     }
-    close $extein_out;
 
-    return("extein_prot_seq_clusters\/$file_handle\_extein.faa");
+    close $extein_out;
 }
 
 sub GET_FULL_PROTEIN_SEQ{
     #takes fasta file of intein sequence, and file data hash as input.
     #retrieves the associated complete asc amino acid sequence
     my $fasta = shift;
+    my %global_memory_hash;
 
     #blast file against database
-    my($blast_file)=RUN_BLAST("blastp",$prot_database,$fasta,"\"6 qseqid sseqid pident sstart send\"");
+    my($blast_file)=RUN_BLAST("blastp",$prot_database,$fasta,"\"6 qseqid sseqid pident\"");
     
+<<<<<<< HEAD
     #parse blast file
     my($hashref2,$hashref3)=PARSE_BLAST($blast_file,$fasta,0);
     my %blast_matches = %{$hashref2};
@@ -221,41 +366,52 @@ sub GET_FULL_PROTEIN_SEQ{
     if(!keys %blast_matches){
         die print "For file $fasta:\nCould not find match for complete sequence.\n";
     }
+=======
+    #READIN query seqs
+    my(%fastadata)=READIN_FASTA($fasta);
+    
+    #parse BLAST output
+    my($hashref2,$hashref3)=PARSE_BLAST($blast_file,\%fastadata,0);
+    my %blast_matches = %{$hashref2};
+    my %local_memory_hash=%{$hashref3};
+>>>>>>> c3a9c26 (updates to old code, and new WIP pipeline)
 
     #create range file and extract associated sequences
+    mkdir("full_prot_seq");
+    move($blast_file,"full_prot_seq\/$blast_file");
     my($file_handle)=($fasta=~/.*\/(.*?)\./);
-    EXTRACT_MATCHES(\%blast_matches,$prot_database,"full_prot_seq_clusters\/$file_handle.faa","0");
+    EXTRACT_MATCHES(\%blast_matches,$prot_database,"full_prot_seq\/$file_handle.faa","0");
 
-    #finaly pair up the extracted full seq ascs with their blast counterparts
-    my $match_counter=0;
-    my %full_seq_data = READIN_FASTA("full_prot_seq_clusters\/$file_handle.faa");
-    foreach my $intein_asc (keys %memory_hash){
-        #print "Searching for $intein_asc\n";
-        foreach my $full_asc (keys %full_seq_data){
-            my $check = $memory_hash{$intein_asc}{"full_seq_blast_asc"};
-            #print "Comparing blast asc $check to full asc $full_asc\n";
-            if($full_asc=~/$check/){
-                #print "Found match!\n\n";
-                $memory_hash{$intein_asc}{"full_seq_original_asc"}=$full_asc;
-                $match_counter++;
+    #Now save full protein sequence acessions into the memory hash (dictionary)
+    #READIN full sequence fasta file
+    my %full_seq_fastadata = READIN_FASTA("full_prot_seq\/$file_handle.faa");
+    my @nomatch;
+    foreach my $intein_asc (keys %local_memory_hash){
+        
+        foreach my $full_seq_asc (keys %full_seq_fastadata){
+
+            #get the BLAST full sequence asc 
+            my $check = $local_memory_hash{$intein_asc}{"full_seq_blast_asc"};
+            
+            #compare said asc to full seq asc 
+            if($full_seq_asc=~/$check/){
+                #save full seq asc and go to next intein asc
+                $global_memory_hash{$intein_asc}{"full_aa_asc"}=$full_seq_asc;
                 last;
             }
             else{
-                #print "No match\n";
                 next;
             }
         }
-        if(!defined $memory_hash{$intein_asc}{"full_seq_original_asc"}){
-            die print "\n\nCould not find match to $intein_asc in full seq ascs.\n\n";
+
+        #check if you could not find a match for the intein asc
+        if(!defined $global_memory_hash{$intein_asc}{"full_aa_asc"}){
+            print "\n\nCould not find match to $intein_asc in full seq aa ascs.\n\n";
+            push(@nomatch,$intein_asc);
         }
     }
 
-    #check to see if all matches were paired properly
-    if($match_counter != $number_of_matches){
-        die print "\n\nMissing matches for full seq asc!\nWas expecting $number_of_matches, but only found $match_counter.\nCheck the logs above.\n\n";
-    }
-
-    return("full_prot_seq_clusters\/$file_handle.faa",\%memory_hash);
+    return("full_prot_seq\/$file_handle.faa",\%global_memory_hash,@nomatch);
 }
 
 sub EXTRACT_MATCHES{
@@ -304,92 +460,83 @@ sub RUN_BLAST{
     my ($database) = shift;
     my ($query_fasta) = shift;
     my ($out_version) = shift;
+    system("$blastversion -query $query_fasta -db $database -out blast6.txt -evalue 1e-20 -outfmt $out_version");
 
-    my ($file_handle) = ($query_fasta=~ /.*\/(.*)/);
-
-    print "BLASTING $file_handle!\n";
-        
-    system("$blastversion -query $query_fasta -db $database -out blast_files\/$file_handle.$blastversion -evalue 1e-20 -outfmt $out_version");
-
-
-    return("blast_files\/$file_handle.$blastversion");
+    return("blast6.txt");
 }
-
-sub SPLIT_FASTA{
-	#splits a multifasta file into several individual fasta files each containing
-	#1 sequence. Returns list of these files.
-	my $infasta_split = shift;
-    mkdir("$input_directory\/split_files");
-	my @fasta_files_split;
-	my $handle_holder = 0;
-
-	open(my $in, "< $infasta_split");
-	while(<$in>){
-	  if($_=~/\>/){
-			chomp;
-			if($handle_holder==0){}
-			else{
-				close $handle_holder;
-			}
-			my($fh)=($_=~/\>(.*)/);
-            my $split_file_handle = "$input_directory"."split_files\/$fh.fasta";
-			open(my $split_handle, "+> $split_file_handle");
-			$handle_holder = $split_handle;
-			print $handle_holder ">$fh\n";
-			push(@fasta_files_split,$split_file_handle);
-	  }
-	  else{
-	    print $handle_holder $_;
-	  }
-	}
-	close $handle_holder;
-	close $in;
-	return @fasta_files_split;
-}
-
 
 sub PARSE_BLAST{
-    #blast file outfmt 6 as input
-    #filters results to find query sequences in database
+    #INPUTS:
+    #blast file outfmt 6
+    #fasta sequence data
+    #mode variable (0 = protein, 1= nucleotide)
+
+    #OUTPUTD:
     #returns hash of matches (1 per query)
+    
     my $blast_to_parse = shift;
     my $query_fasta_file = shift;
     my $mode = shift;
     my $subject_length = 0;
     my %matches;
     my %memory;
+<<<<<<< HEAD
 
+=======
+    
+    #readin BLAST file
+>>>>>>> c3a9c26 (updates to old code, and new WIP pipeline)
     open(my $blast6, "< $blast_to_parse");
     while(<$blast6>){
         chomp;
         my @split = split(/\t/,$_);
 
         #percent ID cutoff
-        if($split[2] ne "100.000"){
+        if($split[2] <= 99.000){
             #print "Percent ID of match only $split[4] not 100.\n";
             next;
         }
 
-        #makes sure that the match covers the entire protein sequence, not just a portion
-        $subject_length = abs($split[3]-$split[4]);
-
-        if($mode ==1){
-            $subject_length+=1; #yes the plus 1 is necessary IDK why.
+        #check mode
+        if($mode == 1){
+            $subject_length = abs($split[3]-$split[4])+1; #yes the plus 1 is necessary IDK why.
         }
 
         #check if match has been previously found to the given query
         if(!defined $matches{$split[0]}){
-            my($phagename)=GET_PHAGE_NAME($split[0]);
+
+            #YOU WILL NEED TO EDIT THIS SUBROUTINE TO MATCH YOUR SEQUENCE ACESSION FORMAT
+            my($phagename)=GET_ACS_NAME($split[0]);
+
             if(!defined $phagename){
                 die print "Failed to get phage name for $split[0]\n\n";
             }
+
             #check for matching name
             if($split[1]=~/$phagename/){
+<<<<<<< HEAD
                 my($paired_intein_match,$paired_intein_match_length)=FIND_ASSOCIATED_FULL_ASC($split[0],$query_fasta_file);
+=======
+                #finds the associated input sequence acession to the current line's subject
+                my($paired_intein_match)=FIND_ASSOCIATED_FULL_ASC($split[0],\%sequence_data);
+>>>>>>> c3a9c26 (updates to old code, and new WIP pipeline)
 
                 #correct coverage cutoff if trying to capture nucleotides.
                 if($mode == 1){
+<<<<<<< HEAD
                     my $query_nucl_length = ($paired_intein_match_length*3);
+=======
+                    my $query_nucl_length = (length($sequence_data{$paired_intein_match})*3);
+                    if($subject_length ne $query_nucl_length){
+                        next;
+                    }
+                    else{
+                        $memory{$paired_intein_match}{"query_blast_asc"}=$split[0];
+                        $memory{$paired_intein_match}{"subject_blast_asc"}=$split[1];
+                        $memory{$paired_intein_match}{"sstart"}=$split[3];
+                        $memory{$paired_intein_match}{"send"}=$split[4];
+                    }
+>>>>>>> c3a9c26 (updates to old code, and new WIP pipeline)
                 }
 
                 #length cutoff
@@ -403,7 +550,7 @@ sub PARSE_BLAST{
 
                 #if parsing blastp matches:
                 else{
-                    $memory{$paired_intein_match}{"intein_blast_asc"}=$split[0];
+                    $memory{$paired_intein_match}{"query_blast_asc"}=$split[0];
                     $memory{$paired_intein_match}{"full_seq_blast_asc"}=$split[1];
                     #print "$phagename matches $split[1]!\n";
                 }
@@ -432,11 +579,21 @@ sub PARSE_BLAST{
 }
 
 sub FIND_ASSOCIATED_FULL_ASC{
+<<<<<<< HEAD
     #return matching ascession + sequence length
     my $asc_to_find = shift;
     my $fasta_file_to_check = shift;
     my $found_asc;
     my $found_seq;
+=======
+    #takes a string unique to 1 acession line
+    #takes a hash with acessions as the keys
+    #outputs the acession the string is in
+
+    my $asc_to_find = shift;
+    my %ascs = %{my $hashref = shift};
+    my $found_it="0";
+>>>>>>> c3a9c26 (updates to old code, and new WIP pipeline)
     
     my(%ascs)=READIN_FASTA($fasta_file_to_check);
     foreach my $asc_in_file (keys %ascs){
@@ -449,18 +606,26 @@ sub FIND_ASSOCIATED_FULL_ASC{
         }
     }
 
+<<<<<<< HEAD
     return($found_asc,$found_seq);
+=======
+    if($found_it eq "0"){
+        $found_it = "NO_MATCH";
+    }
+
+    return($found_it);
+>>>>>>> c3a9c26 (updates to old code, and new WIP pipeline)
 }
 
-sub GET_PHAGE_NAME{
+sub GET_ACS_NAME{
     #takes blast query line as input
-    #returns the name of the phage or dies
+    #returns the name of the asc or dies
+    #You will need to change this subroutine to match the needs of your database
 
     my $text = shift;
     my $name = "";
 
-    #try to match the phage name using one of the following patterns
-    #match test 1
+
     ($name)=($text=~/(.*?)\_.*/);
     if($name eq ""){
         #match test 2
@@ -501,4 +666,43 @@ sub READIN_FASTA{
     }
     close IN;
     return(%sequences);
+}
+
+sub APPEND_UID{
+    #takes a fasta file
+    #appends a unique ID to each acession
+    #ALSO CHECKS FOR THE ODD CASES OF A C GETTING PLACED AFTER THE : PRIOR TO THE START AND STOP SITES.
+    #NO I DO NOT KNOW WHY BLASTDBCMD DOES THIS FUCKING BS
+    my $infile = shift;
+    my $unique = 0;
+    
+    open(IN, "< $infile");
+    open(OUT, "+> temp.fasta");
+    while(<IN>){
+        chomp;
+        $_ =~ s/\s+$//;
+        if($_=~/\>/){
+            #check if the stupid :c is present
+            if($_=~/.*?\:c[0-9]+\-[0-9]+/){
+                $_ =~ s/\:c/\:/;
+            }
+            print OUT "$_\_UID\_$unique\n";
+            $unique++;
+        }
+        else{
+            print OUT "$_\n";
+        }
+    }
+    close IN;
+    close OUT;
+    unlink($infile);
+    rename("temp.fasta",$infile);
+}
+
+sub SETUP{
+    #make directories, and get files needed for downstream processes
+    my(@intein_fasta)=GET_INPUTS_RECURSIVE($input_directory);
+
+    return(@intein_fasta);
+
 }
