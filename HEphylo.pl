@@ -270,9 +270,9 @@ sub REMOVE_KEYS{
 
             foreach my $level2 (keys %{$hash{$level1}}){
                 
-                #YOU WILL NEED TO CHANGE THIS TO MATCH YOUR SEQUENCE ACC STYLE.
-                #This sub needs to remove acc of exteins with inteins (seqs in your dataset)
-                #You can uncomment the reporters below to figure out what regex you need.
+                #this regex needs to take the original acc saved as key_to_remove and format it in such that it matches the call BLAST uses for it
+                #i.e. Original acc: ">Yourseqname proteinannotation somenumbermaybe" BLAST acc: "Yourseqname"
+                #Hence you need to make a regex that takes the first and turns it into the second, such that we can properly search for the query. 
                 my($comparator)=($key_to_remove=~/\>(.*?)\ .*/);
                 #print "\nComparing $level2 to $key_to_remove\nSpecifically the shortened $comparator\n";
 
