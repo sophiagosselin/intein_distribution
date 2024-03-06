@@ -16,9 +16,9 @@ use File::Copy;
 
 ##GLOBALS
 my $extein_aa_file = $ARGV[0]; #these are the extein sequences of proteins known to contain an intein
-my $protein_database = $ARGV[1]; #this database needs to have been created with parse_seqids
+my $protein_database = $ARGV[1]; #this database needs to have been created with parse_seqids, and must contain your extein sequences
 my $extein_nuc_file = $ARGV[2]; #nuc seqs of the extein seqs of $ARGV[0]
-my $nucleotide_database = $ARGV[3]; #this database needs to have been created with parse_seqids
+my $nucleotide_database = $ARGV[3]; #this database needs to have been created with parse_seqids, and must contain your extein sequences
 my $paired_dictionary_file = $ARGV[4]; #this file must be in "extien_aa_acc  exteintein_nuc_acc\n" format such that we can link the two input files
 my %query_dictionary; 
 #this hash will save you a lot of hastle.
