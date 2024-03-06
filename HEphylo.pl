@@ -497,8 +497,8 @@ sub PARSE_BLAST{
             }
 
             #check if it meets the coverage criterion
-            my $coverage_cutoff_low = ($split[3]*0.5);
-            my $coverage_cutoff_high = ($split[3]*1.5);
+            my $coverage_cutoff_low = ($split[3]*0.75);
+            my $coverage_cutoff_high = ($split[3]*1.25);
 
             #if it does, record match!
             if($split[4]>=$coverage_cutoff_low && $split[4]<=$coverage_cutoff_high){
