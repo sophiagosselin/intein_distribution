@@ -356,17 +356,6 @@ sub GET_FULL_PROTEIN_SEQ{
     #blast file against database
     my($blast_file)=RUN_BLAST("blastp",$prot_database,$fasta,"\"6 qseqid sseqid pident\"");
     
-<<<<<<< HEAD
-    #parse blast file
-    my($hashref2,$hashref3)=PARSE_BLAST($blast_file,$fasta,0);
-    my %blast_matches = %{$hashref2};
-    my %memory_hash=%{$hashref3};
-    
-    #check to see if you missed results
-    if(!keys %blast_matches){
-        die print "For file $fasta:\nCould not find match for complete sequence.\n";
-    }
-=======
     #READIN query seqs
     my(%fastadata)=READIN_FASTA($fasta);
     
@@ -374,7 +363,6 @@ sub GET_FULL_PROTEIN_SEQ{
     my($hashref2,$hashref3)=PARSE_BLAST($blast_file,\%fastadata,0);
     my %blast_matches = %{$hashref2};
     my %local_memory_hash=%{$hashref3};
->>>>>>> c3a9c26 (updates to old code, and new WIP pipeline)
 
     #create range file and extract associated sequences
     mkdir("full_prot_seq");
@@ -480,12 +468,8 @@ sub PARSE_BLAST{
     my $subject_length = 0;
     my %matches;
     my %memory;
-<<<<<<< HEAD
-
-=======
     
     #readin BLAST file
->>>>>>> c3a9c26 (updates to old code, and new WIP pipeline)
     open(my $blast6, "< $blast_to_parse");
     while(<$blast6>){
         chomp;
@@ -514,18 +498,11 @@ sub PARSE_BLAST{
 
             #check for matching name
             if($split[1]=~/$phagename/){
-<<<<<<< HEAD
-                my($paired_intein_match,$paired_intein_match_length)=FIND_ASSOCIATED_FULL_ASC($split[0],$query_fasta_file);
-=======
                 #finds the associated input sequence acession to the current line's subject
                 my($paired_intein_match)=FIND_ASSOCIATED_FULL_ASC($split[0],\%sequence_data);
->>>>>>> c3a9c26 (updates to old code, and new WIP pipeline)
 
                 #correct coverage cutoff if trying to capture nucleotides.
                 if($mode == 1){
-<<<<<<< HEAD
-                    my $query_nucl_length = ($paired_intein_match_length*3);
-=======
                     my $query_nucl_length = (length($sequence_data{$paired_intein_match})*3);
                     if($subject_length ne $query_nucl_length){
                         next;
@@ -536,7 +513,6 @@ sub PARSE_BLAST{
                         $memory{$paired_intein_match}{"sstart"}=$split[3];
                         $memory{$paired_intein_match}{"send"}=$split[4];
                     }
->>>>>>> c3a9c26 (updates to old code, and new WIP pipeline)
                 }
 
                 #length cutoff
@@ -579,13 +555,6 @@ sub PARSE_BLAST{
 }
 
 sub FIND_ASSOCIATED_FULL_ASC{
-<<<<<<< HEAD
-    #return matching ascession + sequence length
-    my $asc_to_find = shift;
-    my $fasta_file_to_check = shift;
-    my $found_asc;
-    my $found_seq;
-=======
     #takes a string unique to 1 acession line
     #takes a hash with acessions as the keys
     #outputs the acession the string is in
@@ -593,7 +562,6 @@ sub FIND_ASSOCIATED_FULL_ASC{
     my $asc_to_find = shift;
     my %ascs = %{my $hashref = shift};
     my $found_it="0";
->>>>>>> c3a9c26 (updates to old code, and new WIP pipeline)
     
     my(%ascs)=READIN_FASTA($fasta_file_to_check);
     foreach my $asc_in_file (keys %ascs){
@@ -606,15 +574,11 @@ sub FIND_ASSOCIATED_FULL_ASC{
         }
     }
 
-<<<<<<< HEAD
-    return($found_asc,$found_seq);
-=======
     if($found_it eq "0"){
         $found_it = "NO_MATCH";
     }
 
     return($found_it);
->>>>>>> c3a9c26 (updates to old code, and new WIP pipeline)
 }
 
 sub GET_ACS_NAME{
