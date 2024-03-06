@@ -113,13 +113,13 @@ sub PRINT_NON_MATCHES{
     my($file_handle)=($infasta=~/.*\/(.*?)\./);
 
     mkdir("no_matches");
-    open(my $out1, "+> no_matches\/$file_handle\_no_matches_nucleotide\.txt");
+    open(my $out1, "no_matches\/$file_handle\_no_matches_nucleotide\.txt");
     foreach my $no_match (@nucl_no_match){
         print $out1 "$no_match\n";
     }
     close $out1;
 
-    open(my $out2, "+> no_matches\/$file_handle\_no_matches_aa\.txt");
+    open(my $out2, "no_matches\/$file_handle\_no_matches_nucleotide\.txt");
     foreach my $no_match2 (@prot_no_match){
         print $out2 "$no_match2\n";
     }
@@ -306,8 +306,6 @@ sub GET_EXTEIN_SEQ{
             #print "------------------------------------------------------\n\nNeed to find full nuc asc paired with $intein_asc\n\n";
             foreach my $key1 (keys %paired_memory){
                 #print "Checking key $key1 and it's value for intein_nuc_asc $paired_memory{$key1}{\"intein_nuc_asc\"}\n";
-                #check if this match was never found
-                next if(!defined $paired_memory{$key1}{"intein_nuc_asc"});
                 if($paired_memory{$key1}{"intein_nuc_asc"} eq $intein_asc){
                     #print "Found match for $intein_asc!\nAssociated full nuc asc is: $paired_memory{$key1}{\"full_nuc_asc\"}\n\n";
                     $full_asc = $paired_memory{$key1}{"full_nuc_asc"};
@@ -341,7 +339,7 @@ sub GET_EXTEIN_SEQ{
         }
 
         #to output
-        print $extein_out "$full_asc\n$extein_sequence\n";
+        print $extein_out "$full_asc\_extein\_only\n$extein_sequence\n";
     }
 
     close $extein_out;
@@ -463,8 +461,9 @@ sub PARSE_BLAST{
     #returns hash of matches (1 per query)
     
     my $blast_to_parse = shift;
-    my $query_fasta_file = shift;
+    my %sequence_data = %{my $hashref = shift};
     my $mode = shift;
+
     my $subject_length = 0;
     my %matches;
     my %memory;
@@ -501,7 +500,7 @@ sub PARSE_BLAST{
                 #finds the associated input sequence acession to the current line's subject
                 my($paired_intein_match)=FIND_ASSOCIATED_FULL_ASC($split[0],\%sequence_data);
 
-                #correct coverage cutoff if trying to capture nucleotides.
+                #check for coverage cutoff if trying to capture nucleotides.
                 if($mode == 1){
                     my $query_nucl_length = (length($sequence_data{$paired_intein_match})*3);
                     if($subject_length ne $query_nucl_length){
@@ -515,16 +514,7 @@ sub PARSE_BLAST{
                     }
                 }
 
-                #length cutoff
-                next if($subject_length ne $query_nucl_length);
-                
-                #if parsing nucleotides matches:
-                if($mode == 1){
-                        $memory{$paired_intein_match}{"prot_blast_asc"}=$split[0];
-                        $memory{$paired_intein_match}{"nucl_seq_blast_asc"}=$split[1];
-                }
-
-                #if parsing blastp matches:
+                #if parsing blastp results, then straight to output
                 else{
                     $memory{$paired_intein_match}{"query_blast_asc"}=$split[0];
                     $memory{$paired_intein_match}{"full_seq_blast_asc"}=$split[1];
@@ -548,7 +538,6 @@ sub PARSE_BLAST{
         }
     
     }
-
     close $blast6;
 
     return(\%matches,\%memory);
@@ -563,11 +552,9 @@ sub FIND_ASSOCIATED_FULL_ASC{
     my %ascs = %{my $hashref = shift};
     my $found_it="0";
     
-    my(%ascs)=READIN_FASTA($fasta_file_to_check);
     foreach my $asc_in_file (keys %ascs){
         if($asc_in_file=~/$asc_to_find/){
-            $found_asc=$asc_in_file;
-            $found_seq=length($ascs{$asc_in_file});
+            $found_it=$asc_in_file;
         }
         else{
             next;
