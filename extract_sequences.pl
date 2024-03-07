@@ -99,7 +99,7 @@ sub PRINT_KEY{
     print $keyfile "Intein_AA\tIntein_Nuc\tFull_Seq_AA\tFull_Seq_Nuc\tExtein_AA\tExtein_Nuc\n";
 
     foreach my $intein_aa_acc (keys %key){
-        print $keyfile "$intein_aa_acc\t$key{$intein_aa_acc}{\"intein_nuc_asc\"}\t$key{$intein_aa_acc}{\"full_aa_asc\"}\t$key{$intein_aa_acc}{\"full_nuc_asc\"}\t$key{$intein_aa_acc}{\"full_aa_asc\"}\_extein_only\t$key{$intein_aa_acc}{\"full_nuc_asc\"}\_extein_only\n";
+        print $keyfile "$intein_aa_acc\t$key{$intein_aa_acc}{\"intein_nuc_asc\"}\t$key{$intein_aa_acc}{\"full_aa_asc\"}\t$key{$intein_aa_acc}{\"full_nuc_asc\"}\t$key{$intein_aa_acc}{\"full_aa_asc\"}\t$key{$intein_aa_acc}{\"full_nuc_asc\"}\n";
     }
 
     close $keyfile;
@@ -113,13 +113,13 @@ sub PRINT_NON_MATCHES{
     my($file_handle)=($infasta=~/.*\/(.*?)\./);
 
     mkdir("no_matches");
-    open(my $out1, "no_matches\/$file_handle\_no_matches_nucleotide\.txt");
+    open(my $out1, "+> no_matches\/$file_handle\_no_matches_nucleotide\.txt");
     foreach my $no_match (@nucl_no_match){
         print $out1 "$no_match\n";
     }
     close $out1;
 
-    open(my $out2, "no_matches\/$file_handle\_no_matches_nucleotide\.txt");
+    open(my $out2, "+> no_matches\/$file_handle\_no_matches_aa\.txt");
     foreach my $no_match2 (@prot_no_match){
         print $out2 "$no_match2\n";
     }
@@ -306,6 +306,8 @@ sub GET_EXTEIN_SEQ{
             #print "------------------------------------------------------\n\nNeed to find full nuc asc paired with $intein_asc\n\n";
             foreach my $key1 (keys %paired_memory){
                 #print "Checking key $key1 and it's value for intein_nuc_asc $paired_memory{$key1}{\"intein_nuc_asc\"}\n";
+                #check if this match was never found
+                next if(!defined $paired_memory{$key1}{"intein_nuc_asc"});
                 if($paired_memory{$key1}{"intein_nuc_asc"} eq $intein_asc){
                     #print "Found match for $intein_asc!\nAssociated full nuc asc is: $paired_memory{$key1}{\"full_nuc_asc\"}\n\n";
                     $full_asc = $paired_memory{$key1}{"full_nuc_asc"};
@@ -339,7 +341,7 @@ sub GET_EXTEIN_SEQ{
         }
 
         #to output
-        print $extein_out "$full_asc\_extein\_only\n$extein_sequence\n";
+        print $extein_out "$full_asc\n$extein_sequence\n";
     }
 
     close $extein_out;
