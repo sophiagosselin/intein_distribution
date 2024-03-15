@@ -107,7 +107,7 @@ sub PRINT_KEY{
 
 sub PRINT_NON_MATCHES{
     #prints non matches for given fasta file to new files
-    my @prot_no_match = @{ my $arrayref = shift};
+    my @prot_no_match = @{ my $arrayref1 = shift};
     my @nucl_no_match = @{ my $arrayref2 = shift};
     my $infasta = shift;
     my($file_handle)=($infasta=~/.*\/(.*?)\./);
@@ -182,6 +182,7 @@ sub GET_NUCLEOTIDES{
     move($blast_file,"$outdir\/$blast_file");
     my($file_handle)=($fasta_file=~/.*\/(.*?)\./);
     EXTRACT_MATCHES(\%blast_matches,$nucl_database,"$outdir\/$file_handle.fna",1);
+    #move("range.txt","$outdir\/range.txt");
 
     #append a unique ID to each line 
     APPEND_UID("$outdir\/$file_handle.fna");
@@ -414,6 +415,7 @@ sub EXTRACT_MATCHES{
 
     open(my $range, "+> range.txt");
     foreach my $asc (keys %seqs_for_range){
+        #print "Debugging: asc for extraction is $asc\nBLAST match is $seqs_for_range{$asc}\n\n";
         my @split_data = split(/\t/,$seqs_for_range{$asc});
         
         #if working w/ nucleotides need to include start and end points in range file
@@ -498,7 +500,12 @@ sub PARSE_BLAST{
             }
 
             #check for matching name
-            if($split[1]=~/$phagename/){
+            #print "Debugging: query name $phagename subject name $split[1]\n";
+            #this check at the beginning ensure that you are not matching any names with a partial match
+            #for example: phage MadMarie and phage Marie will now not match each other
+            #the second check exists for a specific acession where the effort to bring it up to code is not worth it...
+            if($split[1]=~/^[^a-z]*$phagename/ || $split[1]=~/\|$phagename\|/){
+                #print "Match found!\n\n";
                 #finds the associated input sequence acession to the current line's subject
                 my($paired_intein_match)=FIND_ASSOCIATED_FULL_ASC($split[0],\%sequence_data);
 
